@@ -9,6 +9,7 @@ from pymongo.results import InsertOneResult
 from bson.objectid import ObjectId
 import sys
 
+
 SITE_ROOT = os.path.realpath(os.path.dirname(__file__))
 json_url = os.path.join(SITE_ROOT, "data", "songs.json")
 songs_list: list = json.load(open(json_url))
@@ -22,7 +23,8 @@ mongodb_port = os.environ.get('MONGODB_PORT')
 
 print(f'The value of MONGODB_SERVICE is: {mongodb_service}')
 
-if mongodb_service == None:
+
+if mongodb_service is None:
     app.logger.error('Missing MongoDB server in the MONGODB_SERVICE variable')
     # abort(500, 'Missing MongoDB server in the MONGODB_SERVICE variable')
     sys.exit(1)
@@ -44,9 +46,80 @@ db = client.songs
 db.songs.drop()
 db.songs.insert_many(songs_list)
 
+
 def parse_json(data):
     return json.loads(json_util.dumps(data))
+
 
 ######################################################################
 # INSERT CODE HERE
 ######################################################################
+@app.route("/health")
+def health():
+    return jsonify(dict(status="OK")), 200
+
+
+@app.route("/count")
+def count():
+    """return length of data"""
+    count = db.songs.count_documents({})
+
+    return {"count": count}, 200
+
+
+@app.route("/song", methods=["GET"])
+def songs():
+    """return length of data"""
+    result = list(db.songs.find({}))
+    print(result[0])
+
+    return {"songs": parse_json(result)}, 200
+
+
+@app.route("/song/<int:id>", methods=["GET"])
+def get_song_by_id(id):
+    """return length of data"""
+    song = db.songs.find_one({"id": id})
+
+    if not song:
+        return {"message": f"song with id {id} not found"}, 404
+    return parse_json(song), 200
+
+
+@app.route("/song", methods=["POST"])
+def create_song():
+    song_new = request.json
+
+    song = db.songs.find_one({"id": song_new["id"]})
+    if song:
+        return {
+            "Message": f"song with id {song_new['id']} already present"
+        }, 302
+    insert_id: InsertOneResult = db.songs.insert_one(song_new)
+    return {"inserted id": parse_json(insert_id.inserted_id)}, 201
+
+
+@app.route("/song/<int:id>", methods=["PUT"])
+def update_song(id):
+    song_new = request.json
+    song = db.songs.find_one({"id": id})
+
+    if not song:
+        return {"message": f"song with id {id} not found"}, 404
+
+    updated_data = {"$set": song_new}
+    result = db.songs.update_one({"id": id}, updated_data)
+
+    if result.modified_count == 0:
+        return {"message": "song found, but nothing updated"}, 200
+    else:
+        return parse_json(db.songs.find_one({"id": id})), 201
+
+
+@app.route("/song/<int:id>", methods=["DELETE"])
+def delete_song(id):
+    result = db.songs.delete_one({"id": id})
+    if result.deleted_count == 0:
+        return {"message": "song not found"}, 404
+    else:
+        return "", 204
